@@ -10,7 +10,11 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 const corsOptions = {
-	origin: ["http://localhost:3000", "http://localhost:3001"],
+	origin: [
+		"http://localhost:3000",
+		"http://localhost:3001",
+		"https://intellirack.judesonleo.me",
+	],
 	credentials: true,
 	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 	allowedHeaders: ["Content-Type", "Authorization"],
