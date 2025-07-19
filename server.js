@@ -74,14 +74,30 @@ io.on("connection", (socket) => {
 				throw new Error("MQTT client not available");
 			}
 
-			// Send command via MQTT
-			const topic = `intellirack/${deviceId}/command`;
-			const message =
-				command === "set_config" ||
-				command === "set_thresholds" ||
-				command === "set_device"
-					? JSON.stringify({ command, ...commandData })
-					: command;
+			// Determine MQTT topic based on command type
+			let topic;
+			let message;
+
+			if (command === "broadcast") {
+				// Broadcast command to all devices
+				topic = `intellirack/broadcast/command`;
+				message = JSON.stringify({
+					command: commandData.broadcastCommand,
+					...commandData,
+				});
+			} else {
+				// Device-specific command
+				topic = `intellirack/${deviceId}/command`;
+				message =
+					command === "set_config" ||
+					command === "set_thresholds" ||
+					command === "set_device"
+						? JSON.stringify({ command, deviceId, ...commandData })
+						: command;
+			}
+
+			console.log(`Publishing to MQTT topic: ${topic}`);
+			console.log(`MQTT message: ${message}`);
 
 			mqttClient.publish(topic, message);
 

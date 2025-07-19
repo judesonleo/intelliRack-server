@@ -40,6 +40,15 @@ function setupMQTT(io) {
 			} else if (topic.includes("/status")) {
 				// Device status update
 				await handleDeviceHeartbeat(deviceId, payload, io);
+			} else if (topic.includes("/response")) {
+				// Command response from device
+				console.log(`Command response from ${deviceId}:`, payload);
+				io.emit("commandResponse", {
+					deviceId: payload.deviceId,
+					command: payload.command,
+					response: payload.response,
+					timestamp: payload.timestamp,
+				});
 			} else if (topic.includes("/weight") || topic.includes("/data")) {
 				// Weight/ingredient data
 				await handleMQTTMessage(payload, io);
