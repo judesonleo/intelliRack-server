@@ -27,12 +27,34 @@ router.post("/login", async (req, res) => {
 	}
 
 	const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "7d" });
-	res.json({ token, user: { id: user._id, name: user.name } });
+	res.json({
+		token,
+		user: { _id: user._id, id: user._id, name: user.name, email: user.email },
+	});
 });
 
 router.get("/me", authMiddleware, async (req, res) => {
-	const user = await User.findById(req.user._id).populate("devices");
-	res.json(user);
+	try {
+		const user = await User.findById(req.user._id).populate("devices");
+		if (!user) {
+			return res.status(404).json({ error: "User not found" });
+		}
+
+		// Return user object with all necessary fields
+		const userData = {
+			_id: user._id,
+			id: user._id,
+			name: user.name,
+			email: user.email,
+			devices: user.devices,
+			createdAt: user.createdAt,
+			updatedAt: user.updatedAt,
+		};
+
+		res.json(userData);
+	} catch (err) {
+		res.status(500).json({ error: err.message });
+	}
 });
 
 // router.get("/me", authMiddleware, async (req, res) => {

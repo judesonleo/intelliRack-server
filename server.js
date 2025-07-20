@@ -28,8 +28,8 @@ app.set("io", io);
 app.set("port", process.env.PORT || 3000);
 app.set("mongoURI", process.env.MONGO_URI);
 
-app.use("/api/auth", require("./routes/auth"));
 app.use("/api/devices", require("./routes/devices"));
+app.use("/api/auth", require("./routes/auth"));
 app.use("/api/logs", require("./routes/logs"));
 app.use("/api/alerts", require("./routes/alerts"));
 
