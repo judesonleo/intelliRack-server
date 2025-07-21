@@ -126,6 +126,19 @@ router.delete("/:rackId", auth, async (req, res) => {
 			$pull: { devices: device._id },
 		});
 
+		// Log to AuditLog
+		const AuditLog = require("../models/AuditLog");
+		await AuditLog.create({
+			user: req.user._id,
+			action: "device_deleted",
+			details: {
+				deviceId: device._id,
+				rackId: device.rackId,
+				name: device.name,
+			},
+			timestamp: new Date(),
+		});
+
 		res.json({ message: "Device deleted successfully" });
 	} catch (err) {
 		res.status(500).json({ error: err.message });

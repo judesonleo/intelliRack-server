@@ -7,32 +7,40 @@ const auth = require("../middleware/auth");
 router.get("/", auth, async (req, res) => {
 	try {
 		const { status, limit = 50, sort = "newest" } = req.query;
-
 		let query = { userId: req.user._id };
-
-		// Filter by status
 		if (status === "active") {
 			query.acknowledged = false;
 		} else if (status === "acknowledged") {
 			query.acknowledged = true;
 		}
-
-		// Build sort object
 		let sortObj = {};
 		if (sort === "newest") {
 			sortObj.createdAt = -1;
 		} else if (sort === "oldest") {
 			sortObj.createdAt = 1;
 		} else if (sort === "priority") {
-			sortObj.type = 1; // EMPTY first, then LOW_STOCK, etc.
+			sortObj.type = 1;
 		}
-
 		const alerts = await Alert.find(query)
-			.populate("device", "name rackId")
+			.populate({ path: "device", select: "name rackId" })
 			.sort(sortObj)
 			.limit(parseInt(limit));
-
-		res.json(alerts);
+		const formatted = alerts.map((alert) => ({
+			_id: alert._id,
+			type: alert.type,
+			ingredient: alert.ingredient,
+			device: alert.device
+				? {
+						_id: alert.device._id,
+						name: alert.device.name,
+						rackId: alert.device.rackId,
+				  }
+				: null,
+			slotId: alert.slotId,
+			acknowledged: alert.acknowledged,
+			createdAt: alert.createdAt ? alert.createdAt.toISOString() : null,
+		}));
+		res.json(formatted);
 	} catch (err) {
 		res.status(500).json({ error: err.message });
 	}

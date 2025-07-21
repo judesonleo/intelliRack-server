@@ -18,7 +18,7 @@ const corsOptions = {
 		"https://intellirack.judesonleo.me",
 	],
 	credentials: true,
-	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
 	allowedHeaders: ["Content-Type", "Authorization"],
 };
 
@@ -33,6 +33,8 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/logs", require("./routes/logs"));
 app.use("/api/alerts", require("./routes/alerts"));
 app.use("/api/nfc", require("./routes/nfc"));
+app.use("/api/ingredients", require("./routes/ingredients"));
+app.use("/api/user", require("./routes/user"));
 
 // WebSocket connection handling
 io.on("connection", (socket) => {

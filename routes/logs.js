@@ -68,11 +68,23 @@ router.get("/", auth, async (req, res) => {
 			})
 			.sort(sortObj)
 			.limit(parseInt(limit));
-
-		// Filter out logs for devices not owned by the user
 		const filteredLogs = logs.filter((log) => log.device);
-
-		res.json(filteredLogs);
+		const formatted = filteredLogs.map((log) => ({
+			_id: log._id,
+			ingredient: log.ingredient,
+			device: log.device
+				? {
+						_id: log.device._id,
+						name: log.device.name,
+						rackId: log.device.rackId,
+				  }
+				: null,
+			slotId: log.slotId,
+			weight: log.weight,
+			status: log.status,
+			timestamp: log.timestamp ? log.timestamp.toISOString() : null,
+		}));
+		res.json(formatted);
 	} catch (err) {
 		res.status(500).json({ error: err.message });
 	}

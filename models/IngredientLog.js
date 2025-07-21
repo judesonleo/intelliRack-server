@@ -12,4 +12,9 @@ const ingredientLogSchema = new mongoose.Schema({
 	timestamp: { type: Date, default: Date.now },
 });
 
+ingredientLogSchema.index(
+	{ device: 1, slotId: 1, timestamp: 1 },
+	{ unique: true }
+);
+
 module.exports = mongoose.model("IngredientLog", ingredientLogSchema);
