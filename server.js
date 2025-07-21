@@ -32,6 +32,7 @@ app.use("/api/devices", require("./routes/devices"));
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/logs", require("./routes/logs"));
 app.use("/api/alerts", require("./routes/alerts"));
+app.use("/api/nfc", require("./routes/nfc"));
 
 // WebSocket connection handling
 io.on("connection", (socket) => {
@@ -88,16 +89,39 @@ io.on("connection", (socket) => {
 			} else {
 				// Device-specific command
 				topic = `intellirack/${deviceId}/command`;
-				message =
-					command === "set_config" ||
-					command === "set_thresholds" ||
-					command === "set_device"
-						? JSON.stringify({ command, deviceId, ...commandData })
-						: command;
+				// Always send plain string for nfc_write or write
+				if (
+					(command === "nfc_write" || command === "write") &&
+					commandData.ingredient
+				) {
+					message = `write:${commandData.ingredient.trim()}`;
+				} else if (command === "nfc_write" || command === "write") {
+					// No ingredient provided
+					socket.emit("commandSent", {
+						deviceId,
+						command,
+						success: false,
+						error: "No ingredient specified for NFC write.",
+					});
+					return;
+				} else if (typeof command === "string" && !commandData.ingredient) {
+					// For simple commands like "tare", "nfc_read", etc.
+					message = command;
+				} else {
+					// Send as JSON for other commands
+					message = JSON.stringify({ command, deviceId, ...commandData });
+				}
 			}
 
 			console.log(`Publishing to MQTT topic: ${topic}`);
 			console.log(`MQTT message: ${message}`);
+			console.log(`Message type: ${typeof message}`);
+			console.log(`Message length: ${message.length}`);
+			console.log(
+				`First character: '${message.charAt(0)}' (ASCII: ${message.charCodeAt(
+					0
+				)})`
+			);
 
 			mqttClient.publish(topic, message);
 
@@ -258,12 +282,87 @@ app.get("/health", (req, res) => {
 	});
 });
 
+// Test MQTT command endpoint
+app.post("/test-mqtt", (req, res) => {
+	try {
+		const { deviceId, command, ...commandData } = req.body;
+		const mqttClient = app.get("mqttClient");
+
+		if (!mqttClient) {
+			return res.status(500).json({ error: "MQTT client not available" });
+		}
+
+		const topic = `intellirack/${deviceId}/command`;
+		const message = JSON.stringify({ command, deviceId, ...commandData });
+
+		console.log(`Test MQTT - Topic: ${topic}`);
+		console.log(`Test MQTT - Message: ${message}`);
+		console.log(`Test MQTT - Command: ${command}`);
+		console.log(`Test MQTT - CommandData:`, commandData);
+
+		mqttClient.publish(topic, message);
+
+		res.json({
+			success: true,
+			topic,
+			message,
+			command,
+			commandData,
+			timestamp: new Date().toISOString(),
+		});
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+});
+
+// Test WebSocket events endpoint
+app.post("/test-events", (req, res) => {
+	try {
+		const { deviceId, eventType, data } = req.body;
+		const io = app.get("io");
+
+		if (!io) {
+			return res.status(500).json({ error: "WebSocket not available" });
+		}
+
+		console.log(
+			`Test Event - Type: ${eventType}, Device: ${deviceId}, Data:`,
+			data
+		);
+
+		switch (eventType) {
+			case "nfcEvent":
+				io.emit("nfcEvent", { deviceId, ...data });
+				break;
+			case "commandResponse":
+				io.emit("commandResponse", { deviceId, ...data });
+				break;
+			case "commandSent":
+				io.emit("commandSent", { deviceId, ...data });
+				break;
+			default:
+				return res.status(400).json({ error: "Unknown event type" });
+		}
+
+		res.json({
+			success: true,
+			eventType,
+			deviceId,
+			data,
+			timestamp: new Date().toISOString(),
+		});
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+});
+
 mongoose
 	.connect(app.get("mongoURI"))
 	.then(() => {
 		console.log("✅ MongoDB connected");
 		const mqttClient = setupMQTT(io);
 		app.set("mqttClient", mqttClient); // Store MQTT client for command handling
+		app.set("io", io); // Store io instance for event testing
 		server.listen(process.env.PORT, () =>
 			console.log(`🚀 Server running on http://localhost:${process.env.PORT}`)
 		);

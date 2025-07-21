@@ -43,12 +43,25 @@ function setupMQTT(io) {
 			} else if (topic.includes("/response")) {
 				// Command response from device
 				console.log(`Command response from ${deviceId}:`, payload);
+
+				// Emit command response event
 				io.emit("commandResponse", {
 					deviceId: payload.deviceId,
 					command: payload.command,
 					response: payload.response,
 					timestamp: payload.timestamp,
 				});
+
+				// Also emit specific NFC events for better frontend handling
+				if (payload.command && payload.command.startsWith("nfc_")) {
+					const nfcType = payload.command.replace("nfc_", "");
+					io.emit("nfcEvent", {
+						type: nfcType,
+						deviceId: payload.deviceId,
+						response: payload.response,
+						timestamp: payload.timestamp,
+					});
+				}
 			} else if (topic.includes("/weight") || topic.includes("/data")) {
 				// Weight/ingredient data
 				await handleMQTTMessage(payload, io);

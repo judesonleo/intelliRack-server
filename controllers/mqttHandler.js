@@ -2,20 +2,31 @@ const Device = require("../models/Device");
 const IngredientStatus = require("../models/IngredientStatus");
 const IngredientLog = require("../models/IngredientLog");
 const Alert = require("../models/Alert");
+const NFCTag = require("../models/NFCTag");
 
 // Device status tracking
 const deviceStatus = new Map(); // Track last heartbeat for each device
 const OFFLINE_THRESHOLD = 30000; // 30 seconds
 
 async function handleMQTTMessage(payload, io) {
-	const { deviceId, slotId, tagUID, ingredient, weight, status, timestamp } =
-		payload;
+	const {
+		deviceId,
+		slotId,
+		tagUID,
+		ingredient,
+		weight,
+		status,
+		timestamp,
+		command,
+		response,
+	} = payload;
 
 	try {
 		// Find and update device
 		const device = await Device.findOne({ rackId: deviceId }).populate("owner");
 		if (!device) {
 			console.warn("Device not registered:", deviceId);
+			console.log(payload);
 			return;
 		}
 
@@ -72,7 +83,7 @@ async function handleMQTTMessage(payload, io) {
 			weight,
 			status,
 			slotId,
-			timestamp: timestamp || now,
+			timestamp: now,
 		});
 
 		// WebSocket push with enhanced data
@@ -107,8 +118,113 @@ async function handleMQTTMessage(payload, io) {
 			});
 			io.emit("alert", { deviceId, slotId, ingredient, status });
 		}
+
+		// Handle NFC events
+		if (command && response) {
+			await handleNFCEvent(device, command, response, io);
+		}
 	} catch (error) {
 		console.error("MQTT Handler Error:", error);
+	}
+}
+
+// Handle NFC events
+async function handleNFCEvent(device, command, response, io) {
+	try {
+		switch (command) {
+			case "nfc_read":
+				// Parse NFC read response
+				try {
+					const nfcData = JSON.parse(response);
+					if (nfcData.tagPresent && nfcData.tagUID) {
+						// Find or create NFC tag
+						let tag = await NFCTag.findByUID(nfcData.tagUID);
+
+						if (tag) {
+							// Update existing tag
+							await tag.incrementReadCount();
+
+							// Update ingredient status
+							await IngredientStatus.findOneAndUpdate(
+								{ device: device._id, slotId: tag.slotId },
+								{
+									ingredient: nfcData.ingredient || tag.ingredient,
+									tagUID: nfcData.tagUID,
+									lastUpdated: new Date(),
+									isOnline: true,
+								},
+								{ upsert: true, new: true }
+							);
+						}
+
+						// Emit NFC read event
+						io.emit("nfcEvent", {
+							type: "read",
+							deviceId: device.rackId,
+							tagUID: nfcData.tagUID,
+							ingredient: nfcData.ingredient,
+							timestamp: new Date(),
+						});
+					}
+				} catch (parseError) {
+					console.error("Error parsing NFC read response:", parseError);
+				}
+				break;
+
+			case "nfc_write":
+
+			case "write":
+				// Handle NFC write response
+				io.emit("nfcEvent", {
+					type: "write",
+					deviceId: device.rackId,
+					response: response,
+					timestamp: new Date(),
+				});
+				break;
+
+			case "nfc_clear":
+			case "clear":
+				// Handle NFC clear response
+				io.emit("nfcEvent", {
+					type: "clear",
+					deviceId: device.rackId,
+					response: response,
+					timestamp: new Date(),
+				});
+				break;
+
+			case "nfc_format":
+			case "format":
+				// Handle NFC format response
+				io.emit("nfcEvent", {
+					type: "format",
+					deviceId: device.rackId,
+					response: response,
+					timestamp: new Date(),
+				});
+				break;
+
+			case "nfc_removed":
+				// Handle NFC tag removal
+				io.emit("nfcEvent", {
+					type: "removed",
+					deviceId: device.rackId,
+					timestamp: new Date(),
+				});
+				break;
+
+			default:
+				// Handle other commands
+				io.emit("commandResponse", {
+					deviceId: device.rackId,
+					command: command,
+					response: response,
+					timestamp: new Date(),
+				});
+		}
+	} catch (error) {
+		console.error("NFC Event Handler Error:", error);
 	}
 }
 
@@ -179,4 +295,5 @@ module.exports = {
 	handleMQTTMessage,
 	handleDeviceHeartbeat,
 	startStatusMonitoring,
+	handleNFCEvent,
 };
