@@ -65,6 +65,7 @@ async function handleMQTTMessage(payload, io) {
 		await IngredientStatus.findOneAndUpdate(
 			{ device: device._id, slotId },
 			{
+				user: device.owner,
 				ingredient,
 				tagUID,
 				weight,
@@ -77,6 +78,7 @@ async function handleMQTTMessage(payload, io) {
 
 		// Save log
 		await IngredientLog.create({
+			user: device.owner,
 			device: device._id,
 			ingredient,
 			tagUID,
