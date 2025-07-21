@@ -3,6 +3,7 @@ const router = express.Router();
 const IngredientLog = require("../models/IngredientLog");
 const Alert = require("../models/Alert");
 const auth = require("../middleware/auth");
+const IngredientStatus = require("../models/IngredientStatus");
 
 // Get all unique ingredient names for the authenticated user
 router.get("/unique", auth, async (req, res) => {
@@ -12,7 +13,8 @@ router.get("/unique", auth, async (req, res) => {
 		});
 		res.json(ingredients);
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/unique:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
@@ -21,7 +23,7 @@ router.get("/logs/:ingredient", auth, async (req, res) => {
 	try {
 		const logs = await IngredientLog.find({
 			user: req.user._id,
-			ingredient: req.params.ingredient,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
 		})
 			.populate({ path: "device", select: "name rackId" })
 			.sort({ timestamp: -1 });
@@ -42,7 +44,8 @@ router.get("/logs/:ingredient", auth, async (req, res) => {
 		}));
 		res.json(formatted);
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/logs/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
@@ -53,7 +56,7 @@ router.get("/usage/:ingredient", auth, async (req, res) => {
 	try {
 		const logs = await IngredientLog.find({
 			user: req.user._id,
-			ingredient: req.params.ingredient,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
 		}).sort({ timestamp: 1 });
 
 		// Calculate daily usage (difference in weight per day)
@@ -73,19 +76,26 @@ router.get("/usage/:ingredient", auth, async (req, res) => {
 		}));
 		res.json(result);
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/usage/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
 // 2. Predict days left until ingredient runs out
 router.get("/prediction/:ingredient", auth, async (req, res) => {
+	console.log(
+		"Prediction endpoint called for ingredient:",
+		req.params.ingredient
+	);
 	try {
 		const logs = await IngredientLog.find({
 			user: req.user._id,
-			ingredient: req.params.ingredient,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
 		}).sort({ timestamp: 1 });
-		if (logs.length < 2)
+		if (logs.length < 2 || !logs[logs.length - 1]) {
 			return res.json({ prediction: null, message: "Not enough data" });
+		}
+		const latestWeight = logs[logs.length - 1].weight || 0;
 
 		// Calculate average daily usage over the last 7 days (or all days if less)
 		const usageByDay = {};
@@ -104,7 +114,7 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 			days > 0
 				? usageArray.slice(-7).reduce((a, b) => a + b, 0) / Math.min(days, 7)
 				: 0;
-		const latestWeight = logs[logs.length - 1].weight;
+
 		const prediction =
 			avgDailyUsage > 0
 				? Math.max(0, Math.round(latestWeight / avgDailyUsage))
@@ -158,7 +168,8 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 
 		res.json({ avgDailyUsage, latestWeight, prediction, unit: "days" });
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/prediction/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
@@ -167,7 +178,7 @@ router.get("/anomalies/:ingredient", auth, async (req, res) => {
 	try {
 		const logs = await IngredientLog.find({
 			user: req.user._id,
-			ingredient: req.params.ingredient,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
 		})
 			.populate({ path: "device", select: "name rackId" })
 			.sort({ timestamp: 1 });
@@ -210,9 +221,11 @@ router.get("/anomalies/:ingredient", auth, async (req, res) => {
 
 		// Integrate with alerts: create alert for each new anomaly
 		for (const log of formatted) {
+			if (!log.device || !log.device._id) continue;
+			if (!log.timestamp) continue;
 			// Check for existing unacknowledged anomaly alert within ±10 minutes
-			const minTime = new Date(log.timestamp.getTime() - 10 * 60000);
-			const maxTime = new Date(log.timestamp.getTime() + 10 * 60000);
+			const minTime = new Date(new Date(log.timestamp).getTime() - 10 * 60000);
+			const maxTime = new Date(new Date(log.timestamp).getTime() + 10 * 60000);
 			const existing = await Alert.findOne({
 				userId: req.user._id,
 				device: log.device._id,
@@ -250,7 +263,8 @@ router.get("/anomalies/:ingredient", auth, async (req, res) => {
 
 		res.json(formatted);
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/anomalies/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
@@ -279,7 +293,8 @@ router.get("/usage-trends/:ingredient", auth, async (req, res) => {
 		});
 		res.json({ weekly, monthly });
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/usage-trends/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
@@ -296,7 +311,8 @@ router.get("/recommendations", auth, async (req, res) => {
 		]);
 		res.json(logs.map((l) => l._id));
 	} catch (err) {
-		res.status(500).json({ error: err.message });
+		console.error("Error in /api/ingredients/recommendations:", err);
+		res.status(500).json({ error: err.message || String(err) });
 	}
 });
 
@@ -323,8 +339,125 @@ router.get("/substitutions/:ingredient", auth, async (req, res) => {
 		const unique = [...new Set(nextIngredients)];
 		res.json(unique);
 	} catch (err) {
+		console.error("Error in /api/ingredients/substitutions/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
+	}
+});
+
+// Usage pattern analytics for an ingredient
+router.get("/usage-pattern/:ingredient", auth, async (req, res) => {
+	try {
+		const logs = await IngredientLog.find({
+			user: req.user._id,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
+		}).sort({ timestamp: 1 });
+		if (!logs.length)
+			return res.json({ perDay: [], perWeek: [], perMonth: [], avgDaily: 0 });
+
+		const now = new Date();
+		// Per day (last 7 days)
+		const perDay = [];
+		for (let i = 6; i >= 0; i--) {
+			const day = new Date(now);
+			day.setDate(now.getDate() - i);
+			const dayStr = day.toISOString().slice(0, 10);
+			const dayLogs = logs.filter(
+				(l) => l.timestamp && l.timestamp.toISOString().slice(0, 10) === dayStr
+			);
+			let used = 0;
+			let prevWeight = null;
+			dayLogs.forEach((l) => {
+				if (prevWeight !== null && l.weight < prevWeight)
+					used += prevWeight - l.weight;
+				prevWeight = l.weight;
+			});
+			perDay.push({ date: dayStr, used });
+		}
+		// Per week (last 4 weeks)
+		const perWeek = [];
+		for (let i = 3; i >= 0; i--) {
+			const weekStart = new Date(now);
+			weekStart.setDate(now.getDate() - weekStart.getDay() - i * 7);
+			const weekEnd = new Date(weekStart);
+			weekEnd.setDate(weekStart.getDate() + 6);
+			const weekLogs = logs.filter(
+				(l) => l.timestamp && l.timestamp >= weekStart && l.timestamp <= weekEnd
+			);
+			let used = 0;
+			let prevWeight = null;
+			weekLogs.forEach((l) => {
+				if (prevWeight !== null && l.weight < prevWeight)
+					used += prevWeight - l.weight;
+				prevWeight = l.weight;
+			});
+			perWeek.push({
+				week: `${weekStart.toISOString().slice(0, 10)} - ${weekEnd
+					.toISOString()
+					.slice(0, 10)}`,
+				used,
+			});
+		}
+		// Per month (last 12 months)
+		const perMonth = [];
+		for (let i = 11; i >= 0; i--) {
+			const month = new Date(now);
+			month.setMonth(now.getMonth() - i);
+			const monthStr = `${month.getFullYear()}-${(month.getMonth() + 1)
+				.toString()
+				.padStart(2, "0")}`;
+			const monthLogs = logs.filter(
+				(l) =>
+					l.timestamp &&
+					l.timestamp.getFullYear() === month.getFullYear() &&
+					l.timestamp.getMonth() === month.getMonth()
+			);
+			let used = 0;
+			let prevWeight = null;
+			monthLogs.forEach((l) => {
+				if (prevWeight !== null && l.weight < prevWeight)
+					used += prevWeight - l.weight;
+				prevWeight = l.weight;
+			});
+			perMonth.push({ month: monthStr, used });
+		}
+		// Overall average daily usage
+		let totalUsed = 0;
+		let prevWeight = null;
+		logs.forEach((l) => {
+			if (prevWeight !== null && l.weight < prevWeight)
+				totalUsed += prevWeight - l.weight;
+			prevWeight = l.weight;
+		});
+		const days =
+			(logs[logs.length - 1].timestamp - logs[0].timestamp) /
+				(1000 * 60 * 60 * 24) || 1;
+		const avgDaily = days > 0 ? totalUsed / days : 0;
+		res.json({ perDay, perWeek, perMonth, avgDaily });
+	} catch (err) {
 		res.status(500).json({ error: err.message });
 	}
 });
 
+// Delete all data for an ingredient
+router.delete("/:ingredient", auth, async (req, res) => {
+	try {
+		await IngredientLog.deleteMany({
+			user: req.user._id,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
+		});
+		await Alert.deleteMany({
+			userId: req.user._id,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
+		});
+		await IngredientStatus.deleteMany({
+			user: req.user._id,
+			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
+		});
+
+		res.json({ message: "Ingredient data deleted successfully" });
+	} catch (err) {
+		console.error("Error in /api/ingredients/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
+	}
+});
 module.exports = router;

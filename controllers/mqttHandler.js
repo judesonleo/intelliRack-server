@@ -61,6 +61,36 @@ async function handleMQTTMessage(payload, io) {
 			status,
 		});
 
+		// Do not log or update status if ingredient is blank/null/whitespace
+		io.emit("update", {
+			deviceId,
+			slotId,
+			ingredient,
+			weight,
+			status,
+			isOnline: true,
+			lastSeen: now,
+			ipAddress: payload.ipAddress,
+		});
+
+		// Device status update
+		io.emit("deviceStatus", {
+			deviceId,
+			isOnline: true,
+			lastSeen: now,
+			weight,
+			status,
+			ingredient, // <-- add this line
+		});
+
+		if (
+			!ingredient ||
+			typeof ingredient !== "string" ||
+			ingredient.trim() === ""
+		) {
+			return;
+		}
+
 		// FILTER: Only log if significant change
 		const lastLog = await IngredientLog.findOne({
 			device: device._id,
@@ -211,25 +241,6 @@ async function handleMQTTMessage(payload, io) {
 		}
 
 		// WebSocket push with enhanced data
-		io.emit("update", {
-			deviceId,
-			slotId,
-			ingredient,
-			weight,
-			status,
-			isOnline: true,
-			lastSeen: now,
-			ipAddress: payload.ipAddress,
-		});
-
-		// Device status update
-		io.emit("deviceStatus", {
-			deviceId,
-			isOnline: true,
-			lastSeen: now,
-			weight,
-			status,
-		});
 
 		// Alerts
 		if (["LOW", "VLOW", "EMPTY"].includes(status)) {
@@ -422,6 +433,7 @@ async function checkDeviceStatus(io) {
 						deviceId,
 						isOnline: false,
 						lastSeen: device.lastSeen,
+						ingredient: device.ingredient,
 					});
 
 					// OFFLINE alert

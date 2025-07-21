@@ -50,6 +50,7 @@ function setupMQTT(io) {
 					command: payload.command,
 					response: payload.response,
 					timestamp: payload.timestamp,
+					ingredient: payload.ingredient,
 				});
 
 				// Also emit specific NFC events for better frontend handling

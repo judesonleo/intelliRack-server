@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 const Alert = require("../models/Alert");
 const auth = require("../middleware/auth");
 
@@ -138,10 +139,11 @@ router.delete("/:alertId", auth, async (req, res) => {
 });
 
 // Delete all acknowledged alerts
-router.delete("/clear-acknowledged", auth, async (req, res) => {
+router.delete("/clearacknowledged", auth, async (req, res) => {
 	try {
+		console.log("[clear-acknowledged] req.user:", req.user);
 		const result = await Alert.deleteMany({
-			userId: req.user._id,
+			userId: mongoose.Types.ObjectId(req.user._id),
 			acknowledged: true,
 		});
 
@@ -150,7 +152,9 @@ router.delete("/clear-acknowledged", auth, async (req, res) => {
 			deletedCount: result.deletedCount,
 		});
 	} catch (err) {
+		console.error("[clear-acknowledged] Error:", err);
 		res.status(500).json({ error: err.message });
+		console.log(err);
 	}
 });
 
