@@ -6,14 +6,20 @@ const {
 } = require("../controllers/mqttHandler");
 
 function setupMQTT(io) {
+	const mqttOptions = {
+		clientId: `intellirack-server-${Date.now()}`,
+		clean: true,
+		reconnectPeriod: 5000,
+		connectTimeout: 30000,
+	};
+	if (process.env.MQTT_USERNAME)
+		mqttOptions.username = process.env.MQTT_USERNAME;
+	if (process.env.MQTT_PASSWORD)
+		mqttOptions.password = process.env.MQTT_PASSWORD;
+
 	const client = mqtt.connect(
 		process.env.MQTT_URL || "mqtt://broker.hivemq.com",
-		{
-			clientId: `intellirack-server-${Date.now()}`,
-			clean: true,
-			reconnectPeriod: 5000,
-			connectTimeout: 30000,
-		}
+		mqttOptions
 	);
 
 	client.on("connect", () => {
