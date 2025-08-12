@@ -17,10 +17,7 @@ function setupMQTT(io) {
 	if (process.env.MQTT_PASSWORD)
 		mqttOptions.password = process.env.MQTT_PASSWORD;
 
-	const client = mqtt.connect(
-		process.env.MQTT_URL || "mqtt://broker.hivemq.com",
-		mqttOptions
-	);
+	const client = mqtt.connect(process.env.MQTT_URL, mqttOptions);
 
 	client.on("connect", () => {
 		console.log("✅ MQTT connected to broker");

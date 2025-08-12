@@ -10,13 +10,25 @@ const User = require("./models/User");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+	cors: {
+		origin: [
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"https://intellirack.judesonleo.dev",
+			"https://intellirack.judesonleo.me",
+		],
+		credentials: true,
+		methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+		allowedHeaders: ["Content-Type", "Authorization"],
+	},
+});
 const corsOptions = {
 	origin: [
 		"http://localhost:3000",
 		"http://localhost:3001",
-		"https://intellirack.judesonleo.me",
 		"https://intellirack.judesonleo.dev",
+		"https://intellirack.judesonleo.me",
 	],
 	credentials: true,
 	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
