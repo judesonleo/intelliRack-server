@@ -10,12 +10,15 @@ router.get("/", auth, async (req, res) => {
 			device,
 			status,
 			ingredient,
-			limit = 100,
+			limit = 50,
+			page = 1,
 			sort = "newest",
 			startDate,
 			endDate,
 			search,
 		} = req.query;
+
+		const skip = (parseInt(page) - 1) * parseInt(limit);
 
 		// Build query
 		let query = {};
@@ -60,6 +63,9 @@ router.get("/", auth, async (req, res) => {
 			sortObj.weight = -1;
 		}
 
+		// Get total count for pagination
+		const total = await IngredientLog.countDocuments(query);
+
 		const logs = await IngredientLog.find(query)
 			.populate({
 				path: "device",
@@ -67,6 +73,7 @@ router.get("/", auth, async (req, res) => {
 				select: "name rackId",
 			})
 			.sort(sortObj)
+			.skip(skip)
 			.limit(parseInt(limit));
 		const filteredLogs = logs.filter((log) => log.device);
 		const formatted = filteredLogs.map((log) => ({
@@ -84,7 +91,16 @@ router.get("/", auth, async (req, res) => {
 			status: log.status,
 			timestamp: log.timestamp ? log.timestamp.toISOString() : null,
 		}));
-		res.json(formatted);
+
+		res.json({
+			logs: formatted,
+			pagination: {
+				page: parseInt(page),
+				limit: parseInt(limit),
+				total,
+				pages: Math.ceil(total / parseInt(limit)),
+			},
+		});
 	} catch (err) {
 		res.status(500).json({ error: err.message });
 	}

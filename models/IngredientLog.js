@@ -17,4 +17,10 @@ ingredientLogSchema.index(
 	{ unique: true }
 );
 
+// Add index for batch prediction queries
+ingredientLogSchema.index({ user: 1, ingredient: 1, timestamp: 1 });
+
+// Add index for general ingredient queries
+ingredientLogSchema.index({ user: 1, ingredient: 1 });
+
 module.exports = mongoose.model("IngredientLog", ingredientLogSchema);

@@ -65,7 +65,7 @@ async function handleMQTTMessage(payload, io) {
 		io.emit("update", {
 			deviceId,
 			slotId,
-			ingredient,
+			ingredient: finalIngredient || ingredient, // Use normalized if available, fallback to original
 			weight,
 			status,
 			isOnline: true,
@@ -80,7 +80,7 @@ async function handleMQTTMessage(payload, io) {
 			lastSeen: now,
 			weight,
 			status,
-			ingredient, // <-- add this line
+			ingredient: finalIngredient || ingredient, // Use normalized if available, fallback to original
 		});
 
 		if (
@@ -90,6 +90,47 @@ async function handleMQTTMessage(payload, io) {
 		) {
 			return;
 		}
+
+		// VALIDATE INGREDIENT NAME: Prevent corrupted data from hardware
+		const cleanIngredient = ingredient.trim();
+
+		// Check for corrupted ingredient names (contains non-printable characters or unusual patterns)
+		if (cleanIngredient.length < 1 || cleanIngredient.length > 100) {
+			console.warn(
+				`MQTT - Invalid ingredient name length: "${cleanIngredient}" from device ${deviceId}`
+			);
+			return;
+		}
+
+		// Check for non-printable characters or corrupted patterns
+		if (/[^\x20-\x7E]/.test(cleanIngredient)) {
+			console.warn(
+				`MQTT - Non-printable characters in ingredient name: "${cleanIngredient}" from device ${deviceId}`
+			);
+			return;
+		}
+
+		// Check for suspicious patterns (multiple special characters)
+		if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/.test(cleanIngredient)) {
+			console.warn(
+				`MQTT - Suspicious ingredient name pattern: "${cleanIngredient}" from device ${deviceId}`
+			);
+			return;
+		}
+
+		// Check for case sensitivity issues - normalize to title case
+		const normalizedIngredient = cleanIngredient
+			.toLowerCase()
+			.split(" ")
+			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+			.join(" ");
+
+		console.log(
+			`MQTT - Normalized ingredient name: "${cleanIngredient}" -> "${normalizedIngredient}" from device ${deviceId}`
+		);
+
+		// Use normalized ingredient name for all operations
+		const finalIngredient = normalizedIngredient;
 
 		// FILTER: Only log if significant change
 		const lastLog = await IngredientLog.findOne({
@@ -110,7 +151,7 @@ async function handleMQTTMessage(payload, io) {
 			const weightChanged =
 				Math.abs((weight || 0) - (lastLog.weight || 0)) > 10;
 			const statusChanged = status !== lastLog.status;
-			const ingredientChanged = ingredient !== lastLog.ingredient;
+			const ingredientChanged = finalIngredient !== lastLog.ingredient;
 			const slotChanged = slotId !== lastLog.slotId;
 			shouldLog =
 				weightChanged || statusChanged || ingredientChanged || slotChanged;
@@ -159,7 +200,7 @@ async function handleMQTTMessage(payload, io) {
 				{ device: device._id, slotId },
 				{
 					user: device.owner,
-					ingredient,
+					ingredient: finalIngredient,
 					tagUID,
 					weight,
 					status: logStatus,
@@ -173,7 +214,7 @@ async function handleMQTTMessage(payload, io) {
 			const logDoc = await IngredientLog.create({
 				user: device.owner,
 				device: device._id,
-				ingredient,
+				ingredient: finalIngredient,
 				tagUID,
 				weight,
 				status: logStatus,
@@ -196,7 +237,7 @@ async function handleMQTTMessage(payload, io) {
 					userId: device.owner._id,
 					device: device._id,
 					slotId,
-					ingredient,
+					ingredient: finalIngredient,
 					type: alertType,
 					acknowledged: false,
 				});
@@ -204,7 +245,7 @@ async function handleMQTTMessage(payload, io) {
 					await Alert.create({
 						userId: device.owner._id,
 						device: device._id,
-						ingredient,
+						ingredient: finalIngredient,
 						slotId,
 						type: alertType,
 						acknowledged: false,
@@ -220,7 +261,7 @@ async function handleMQTTMessage(payload, io) {
 								headers: { "Content-Type": "application/json" },
 								body: JSON.stringify({
 									alertType,
-									ingredient,
+									ingredient: finalIngredient,
 									device: device._id,
 									slotId,
 									alertDetails,
@@ -233,7 +274,12 @@ async function handleMQTTMessage(payload, io) {
 					await AuditLog.create({
 						user: device.owner._id,
 						action: "alert_created",
-						details: { alertType, ingredient, slotId, alertDetails },
+						details: {
+							alertType,
+							ingredient: finalIngredient,
+							slotId,
+							alertDetails,
+						},
 						timestamp: now,
 					});
 				}
@@ -249,7 +295,7 @@ async function handleMQTTMessage(payload, io) {
 				userId: device.owner._id,
 				device: device._id,
 				slotId,
-				ingredient,
+				ingredient: finalIngredient,
 				type: alertType,
 				acknowledged: false,
 			});
@@ -257,12 +303,17 @@ async function handleMQTTMessage(payload, io) {
 				await Alert.create({
 					userId: device.owner._id,
 					device: device._id,
-					ingredient,
+					ingredient: finalIngredient,
 					slotId,
 					type: alertType,
 				});
-				console.log("Alert created:", alertType, ingredient, slotId);
-				io.emit("alert", { deviceId, slotId, ingredient, status });
+				console.log("Alert created:", alertType, finalIngredient, slotId);
+				io.emit("alert", {
+					deviceId,
+					slotId,
+					ingredient: finalIngredient,
+					status,
+				});
 			} else {
 				console.log(
 					"Duplicate or unacknowledged alert skipped:",

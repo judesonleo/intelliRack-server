@@ -18,6 +18,64 @@ router.get("/unique", auth, async (req, res) => {
 	}
 });
 
+// Get ingredients summary for faster loading
+router.get("/summary", auth, async (req, res) => {
+	try {
+		const ingredients = await IngredientLog.aggregate([
+			{ $match: { user: req.user._id } },
+			{
+				$group: {
+					_id: "$ingredient",
+					latestLog: { $first: "$$ROOT" },
+					totalLogs: { $sum: 1 },
+					avgWeight: { $avg: "$weight" },
+				},
+			},
+			{
+				$lookup: {
+					from: "devices",
+					localField: "latestLog.device",
+					foreignField: "_id",
+					as: "deviceInfo",
+				},
+			},
+			{
+				$project: {
+					name: "$_id",
+					status: "$latestLog.status",
+					weight: "$latestLog.weight",
+					lastUpdated: "$latestLog.timestamp",
+					device: { $arrayElemAt: ["$deviceInfo", 0] },
+					totalLogs: 1,
+					avgWeight: 1,
+				},
+			},
+		]);
+
+		// Format the response
+		const formatted = ingredients.map((ing) => ({
+			name: ing.name,
+			status: ing.status,
+			weight: ing.weight,
+			lastUpdated: ing.lastUpdated,
+			device: ing.device
+				? {
+						_id: ing.device._id,
+						name: ing.device.name,
+						rackId: ing.device.rackId,
+				  }
+				: null,
+			totalLogs: ing.totalLogs,
+			avgWeight: ing.avgWeight,
+		}));
+
+		res.json(formatted);
+	} catch (err) {
+		console.error("Error in /api/ingredients/summary:", err);
+		res.status(500).json({ error: err.message || String(err) });
+	}
+});
+
 // Get all logs for a specific ingredient for the authenticated user
 router.get("/logs/:ingredient", auth, async (req, res) => {
 	try {
@@ -83,14 +141,40 @@ router.get("/usage/:ingredient", auth, async (req, res) => {
 
 // 2. Predict days left until ingredient runs out
 router.get("/prediction/:ingredient", auth, async (req, res) => {
-	console.log(
-		"Prediction endpoint called for ingredient:",
-		req.params.ingredient
-	);
+	const ingredientName = req.params.ingredient;
+
+	// Validate ingredient name to prevent processing corrupted data
+	if (
+		!ingredientName ||
+		ingredientName.length < 1 ||
+		ingredientName.length > 100
+	) {
+		console.warn(
+			"Prediction endpoint called with invalid ingredient name:",
+			ingredientName
+		);
+		return res.status(400).json({ error: "Invalid ingredient name" });
+	}
+
+	// Check for corrupted ingredient names (contains non-printable characters or unusual patterns)
+	if (
+		/[^\x20-\x7E]/.test(ingredientName) ||
+		/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/.test(ingredientName)
+	) {
+		console.warn(
+			"Prediction endpoint called with corrupted ingredient name:",
+			ingredientName
+		);
+		return res
+			.status(400)
+			.json({ error: "Corrupted ingredient name detected" });
+	}
+
+	console.log("Prediction endpoint called for ingredient:", ingredientName);
 	try {
 		const logs = await IngredientLog.find({
 			user: req.user._id,
-			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
+			ingredient: new RegExp(`^${ingredientName}$`, "i"),
 		}).sort({ timestamp: 1 });
 		if (logs.length < 2 || !logs[logs.length - 1]) {
 			return res.json({ prediction: null, message: "Not enough data" });
@@ -126,7 +210,7 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 			const existing = await Alert.findOne({
 				userId: req.user._id,
 				device: logs[logs.length - 1].device,
-				ingredient: req.params.ingredient,
+				ingredient: ingredientName,
 				type: "DEPLETION",
 				acknowledged: false,
 			});
@@ -134,7 +218,7 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 				await Alert.create({
 					userId: req.user._id,
 					device: logs[logs.length - 1].device,
-					ingredient: req.params.ingredient,
+					ingredient: ingredientName,
 					type: "DEPLETION",
 					acknowledged: false,
 					createdAt: new Date(),
@@ -149,7 +233,7 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 							headers: { "Content-Type": "application/json" },
 							body: JSON.stringify({
 								alertType: "DEPLETION",
-								ingredient: req.params.ingredient,
+								ingredient: ingredientName,
 								prediction,
 								user: req.user._id,
 							}),
@@ -161,7 +245,7 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 				await AuditLog.create({
 					user: req.user._id,
 					action: "depletion_alert_created",
-					details: { ingredient: req.params.ingredient, prediction },
+					details: { ingredient: ingredientName, prediction },
 				});
 			}
 		}
@@ -175,10 +259,39 @@ router.get("/prediction/:ingredient", auth, async (req, res) => {
 
 // 3. Anomaly detection: logs with unusually large changes
 router.get("/anomalies/:ingredient", auth, async (req, res) => {
+	const ingredientName = req.params.ingredient;
+
+	// Validate ingredient name to prevent processing corrupted data
+	if (
+		!ingredientName ||
+		ingredientName.length < 1 ||
+		ingredientName.length > 100
+	) {
+		console.warn(
+			"Anomalies endpoint called with invalid ingredient name:",
+			ingredientName
+		);
+		return res.status(400).json({ error: "Invalid ingredient name" });
+	}
+
+	// Check for corrupted ingredient names (contains non-printable characters or unusual patterns)
+	if (
+		/[^\x20-\x7E]/.test(ingredientName) ||
+		/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/.test(ingredientName)
+	) {
+		console.warn(
+			"Anomalies endpoint called with corrupted ingredient name:",
+			ingredientName
+		);
+		return res
+			.status(400)
+			.json({ error: "Corrupted ingredient name detected" });
+	}
+
 	try {
 		const logs = await IngredientLog.find({
 			user: req.user._id,
-			ingredient: new RegExp(`^${req.params.ingredient}$`, "i"),
+			ingredient: new RegExp(`^${ingredientName}$`, "i"),
 		})
 			.populate({ path: "device", select: "name rackId" })
 			.sort({ timestamp: 1 });
@@ -438,6 +551,133 @@ router.get("/usage-pattern/:ingredient", auth, async (req, res) => {
 	}
 });
 
+// Batch prediction endpoint for multiple ingredients
+router.get("/predictions/batch", auth, async (req, res) => {
+	try {
+		const { ingredients } = req.query;
+
+		if (!ingredients || !Array.isArray(ingredients)) {
+			return res.status(400).json({ error: "Ingredients array required" });
+		}
+
+		console.log(
+			`Batch prediction requested for ${ingredients.length} ingredients`
+		);
+
+		// OPTIMIZATION: Single database query for all ingredients
+		const ingredientRegex = ingredients.map(
+			(name) => new RegExp(`^${name}$`, "i")
+		);
+
+		// Fetch all logs for all ingredients in one query
+		const allLogs = await IngredientLog.find({
+			user: req.user._id,
+			ingredient: { $in: ingredientRegex },
+		}).sort({ timestamp: 1 });
+
+		console.log(`Fetched ${allLogs.length} total logs for batch processing`);
+
+		// Group logs by ingredient for efficient processing
+		const logsByIngredient = {};
+		allLogs.forEach((log) => {
+			if (!logsByIngredient[log.ingredient]) {
+				logsByIngredient[log.ingredient] = [];
+			}
+			logsByIngredient[log.ingredient].push(log);
+		});
+
+		// Process all ingredients using the grouped data
+		const predictions = ingredients.map((ingredientName) => {
+			try {
+				// Validate ingredient name
+				if (
+					!ingredientName ||
+					ingredientName.length < 1 ||
+					ingredientName.length > 100
+				) {
+					return {
+						ingredient: ingredientName,
+						prediction: null,
+						error: "Invalid ingredient name",
+					};
+				}
+
+				// Check for corrupted ingredient names
+				if (
+					/[^\x20-\x7E]/.test(ingredientName) ||
+					/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/.test(ingredientName)
+				) {
+					return {
+						ingredient: ingredientName,
+						prediction: null,
+						error: "Corrupted ingredient name",
+					};
+				}
+
+				const logs = logsByIngredient[ingredientName] || [];
+
+				if (logs.length < 2 || !logs[logs.length - 1]) {
+					return {
+						ingredient: ingredientName,
+						prediction: null,
+						message: "Not enough data",
+					};
+				}
+
+				const latestWeight = logs[logs.length - 1].weight || 0;
+
+				// Calculate average daily usage over the last 7 days
+				const usageByDay = {};
+				let prevWeight = null;
+				logs.forEach((log) => {
+					const day = log.timestamp.toISOString().slice(0, 10);
+					if (prevWeight !== null && log.weight < prevWeight) {
+						const used = prevWeight - log.weight;
+						usageByDay[day] = (usageByDay[day] || 0) + used;
+					}
+					prevWeight = log.weight;
+				});
+
+				const usageArray = Object.values(usageByDay);
+				const days = usageArray.length;
+				const avgDailyUsage =
+					days > 0
+						? usageArray.slice(-7).reduce((a, b) => a + b, 0) /
+						  Math.min(days, 7)
+						: 0;
+
+				const prediction =
+					avgDailyUsage > 0
+						? Math.max(0, Math.round(latestWeight / avgDailyUsage))
+						: null;
+
+				return {
+					ingredient: ingredientName,
+					prediction,
+					avgDailyUsage,
+					latestWeight,
+					unit: "days",
+				};
+			} catch (err) {
+				console.error(
+					`Error processing prediction for ${ingredientName}:`,
+					err
+				);
+				return {
+					ingredient: ingredientName,
+					prediction: null,
+					error: err.message,
+				};
+			}
+		});
+
+		res.json({ predictions });
+	} catch (err) {
+		console.error("Error in batch prediction endpoint:", err);
+		res.status(500).json({ error: err.message || String(err) });
+	}
+});
+
 // Delete all data for an ingredient
 router.delete("/:ingredient", auth, async (req, res) => {
 	try {
@@ -457,6 +697,60 @@ router.delete("/:ingredient", auth, async (req, res) => {
 		res.json({ message: "Ingredient data deleted successfully" });
 	} catch (err) {
 		console.error("Error in /api/ingredients/:ingredient:", err);
+		res.status(500).json({ error: err.message || String(err) });
+	}
+});
+
+// Cleanup corrupted ingredient data
+router.delete("/cleanup/corrupted", auth, async (req, res) => {
+	try {
+		console.log("Cleanup endpoint called for user:", req.user._id);
+
+		// Find all ingredient logs with corrupted names
+		const corruptedLogs = await IngredientLog.find({
+			user: req.user._id,
+			ingredient: {
+				$regex: /[^\x20-\x7E]|[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/,
+			},
+		});
+
+		if (corruptedLogs.length === 0) {
+			return res.json({
+				message: "No corrupted ingredient data found",
+				deletedCount: 0,
+			});
+		}
+
+		console.log("Found corrupted ingredient logs:", corruptedLogs.length);
+		console.log(
+			"Corrupted ingredient names:",
+			corruptedLogs.map((log) => log.ingredient)
+		);
+
+		// Delete corrupted logs
+		const result = await IngredientLog.deleteMany({
+			user: req.user._id,
+			ingredient: {
+				$regex: /[^\x20-\x7E]|[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/,
+			},
+		});
+
+		// Also delete any alerts associated with corrupted ingredients
+		const alertResult = await Alert.deleteMany({
+			userId: req.user._id,
+			ingredient: {
+				$regex: /[^\x20-\x7E]|[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]{3,}/,
+			},
+		});
+
+		res.json({
+			message: `Cleaned up corrupted ingredient data`,
+			deletedLogs: result.deletedCount,
+			deletedAlerts: alertResult.deletedCount,
+			totalDeleted: result.deletedCount + alertResult.deletedCount,
+		});
+	} catch (err) {
+		console.error("Error in cleanup endpoint:", err);
 		res.status(500).json({ error: err.message || String(err) });
 	}
 });

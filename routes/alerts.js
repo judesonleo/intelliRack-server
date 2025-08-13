@@ -7,7 +7,7 @@ const auth = require("../middleware/auth");
 // List all alerts for the logged-in user
 router.get("/", auth, async (req, res) => {
 	try {
-		const { status, limit = 50, sort = "newest" } = req.query;
+		const { status, limit = 25, page = 1, sort = "newest" } = req.query;
 		let query = { userId: req.user._id };
 		if (status === "active") {
 			query.acknowledged = false;
@@ -22,9 +22,14 @@ router.get("/", auth, async (req, res) => {
 		} else if (sort === "priority") {
 			sortObj.type = 1;
 		}
+
+		const skip = (parseInt(page) - 1) * parseInt(limit);
+		const total = await Alert.countDocuments(query);
+
 		const alerts = await Alert.find(query)
 			.populate({ path: "device", select: "name rackId" })
 			.sort(sortObj)
+			.skip(skip)
 			.limit(parseInt(limit));
 		const formatted = alerts.map((alert) => ({
 			_id: alert._id,
@@ -41,7 +46,16 @@ router.get("/", auth, async (req, res) => {
 			acknowledged: alert.acknowledged,
 			createdAt: alert.createdAt ? alert.createdAt.toISOString() : null,
 		}));
-		res.json(formatted);
+
+		res.json({
+			alerts: formatted,
+			pagination: {
+				page: parseInt(page),
+				limit: parseInt(limit),
+				total,
+				pages: Math.ceil(total / parseInt(limit)),
+			},
+		});
 	} catch (err) {
 		res.status(500).json({ error: err.message });
 	}
@@ -120,6 +134,53 @@ router.get("/stats", auth, async (req, res) => {
 	}
 });
 
+// Delete all acknowledged alerts
+router.delete("/clearacknowledged", auth, async (req, res) => {
+	try {
+		console.log("[clear-acknowledged] req.user:", req.user);
+		console.log("[clear-acknowledged] req.user._id:", req.user._id);
+		console.log("[clear-acknowledged] req.user._id type:", typeof req.user._id);
+
+		// Validate user ID
+		if (!req.user._id) {
+			return res.status(400).json({ error: "Invalid user ID" });
+		}
+
+		// First, get the count of acknowledged alerts to validate
+		const acknowledgedCount = await Alert.countDocuments({
+			userId: req.user._id,
+			acknowledged: true,
+		});
+
+		console.log(
+			"[clear-acknowledged] Found acknowledged alerts:",
+			acknowledgedCount
+		);
+
+		if (acknowledgedCount === 0) {
+			return res.json({
+				message: "No acknowledged alerts to delete",
+				deletedCount: 0,
+			});
+		}
+
+		const result = await Alert.deleteMany({
+			userId: req.user._id,
+			acknowledged: true,
+		});
+
+		console.log("[clear-acknowledged] Result:", result);
+
+		res.json({
+			message: `${result.deletedCount} acknowledged alerts deleted`,
+			deletedCount: result.deletedCount,
+		});
+	} catch (err) {
+		console.error("[clear-acknowledged] Error:", err);
+		res.status(500).json({ error: err.message });
+	}
+});
+
 // Delete an alert
 router.delete("/:alertId", auth, async (req, res) => {
 	try {
@@ -135,26 +196,6 @@ router.delete("/:alertId", auth, async (req, res) => {
 		res.json({ message: "Alert deleted successfully" });
 	} catch (err) {
 		res.status(500).json({ error: err.message });
-	}
-});
-
-// Delete all acknowledged alerts
-router.delete("/clearacknowledged", auth, async (req, res) => {
-	try {
-		console.log("[clear-acknowledged] req.user:", req.user);
-		const result = await Alert.deleteMany({
-			userId: mongoose.Types.ObjectId(req.user._id),
-			acknowledged: true,
-		});
-
-		res.json({
-			message: `${result.deletedCount} acknowledged alerts deleted`,
-			deletedCount: result.deletedCount,
-		});
-	} catch (err) {
-		console.error("[clear-acknowledged] Error:", err);
-		res.status(500).json({ error: err.message });
-		console.log(err);
 	}
 });
 
