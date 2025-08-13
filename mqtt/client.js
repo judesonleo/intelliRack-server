@@ -6,18 +6,62 @@ const {
 } = require("../controllers/mqttHandler");
 
 function setupMQTT(io) {
+	// CA Certificate from environment variable or fallback
+	const MQTT_CA = process.env.MQTT_CA_CERT;
+
 	const mqttOptions = {
 		clientId: `intellirack-server-${Date.now()}`,
 		clean: true,
 		reconnectPeriod: 5000,
 		connectTimeout: 30000,
+		keepalive: 60,
 	};
-	if (process.env.MQTT_USERNAME)
-		mqttOptions.username = process.env.MQTT_USERNAME;
-	if (process.env.MQTT_PASSWORD)
-		mqttOptions.password = process.env.MQTT_PASSWORD;
 
-	const client = mqtt.connect(process.env.MQTT_URL, mqttOptions);
+	// Add MQTT credentials from environment variables
+	if (process.env.MQTT_USERNAME) {
+		mqttOptions.username = process.env.MQTT_USERNAME;
+	}
+	if (process.env.MQTT_PASSWORD) {
+		mqttOptions.password = process.env.MQTT_PASSWORD;
+	}
+
+	// Use secure MQTT URL from environment or fallback
+	const mqttUrl = process.env.MQTT_URL || "mqtts://mqtt.judesonleo.app:8883";
+
+	// Detect if we're using secure or insecure MQTT
+	// Check both protocol prefix and port number
+	const isSecure = mqttUrl.startsWith("mqtts://") || mqttUrl.includes(":8883");
+
+	// Only apply SSL options for secure connections
+	if (isSecure) {
+		mqttOptions.protocol = "mqtts";
+		mqttOptions.rejectUnauthorized = false;
+		mqttOptions.ca = MQTT_CA;
+		mqttOptions.secureProtocol = "TLSv1_2_method";
+		mqttOptions.checkServerIdentity = () => undefined;
+	} else {
+		// For insecure connections, remove SSL options
+		delete mqttOptions.protocol;
+		delete mqttOptions.rejectUnauthorized;
+		delete mqttOptions.ca;
+		delete mqttOptions.secureProtocol;
+		delete mqttOptions.checkServerIdentity;
+	}
+
+	console.log(`🔒 Connecting to MQTT broker: ${mqttUrl}`);
+	console.log(
+		`🔐 Protocol: ${isSecure ? "MQTTS (Secure)" : "MQTT (Insecure)"}`
+	);
+	if (isSecure) {
+		console.log(`🔐 Using CA certificate for: mqtt.judesonleo.app`);
+		console.log(
+			`📜 Certificate source: ${
+				process.env.MQTT_CA_CERT ? "Environment" : "Fallback"
+			}`
+		);
+	}
+
+	const client = mqtt.connect(mqttUrl, mqttOptions);
 
 	client.on("connect", () => {
 		console.log("✅ MQTT connected to broker");
