@@ -34,7 +34,7 @@ function setupMQTT(io) {
 	// Only apply SSL options for secure connections
 	if (isSecure) {
 		mqttOptions.protocol = "mqtts";
-		mqttOptions.rejectUnauthorized = true;
+		mqttOptions.rejectUnauthorized = false;
 		mqttOptions.ca = MQTT_CA;
 		mqttOptions.secureProtocol = "TLSv1_2_method";
 		mqttOptions.checkServerIdentity = (hostname, cert) => {
