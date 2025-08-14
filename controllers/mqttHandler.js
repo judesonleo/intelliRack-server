@@ -6,7 +6,7 @@ const NFCTag = require("../models/NFCTag");
 
 // Device status tracking
 const deviceStatus = new Map(); // Track last heartbeat for each device
-const OFFLINE_THRESHOLD = 30000; // 30 seconds
+const OFFLINE_THRESHOLD = 10000; // 10 seconds
 
 async function handleMQTTMessage(payload, io) {
 	const {
@@ -468,7 +468,7 @@ async function checkDeviceStatus(io) {
 	const Alert = require("../models/Alert");
 	const User = require("../models/User");
 	const AuditLog = require("../models/AuditLog");
-	const OFFLINE_THRESHOLD = 10 * 60 * 1000; // 10 minutes
+	const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
 
 	for (const [deviceId, status] of deviceStatus.entries()) {
 		if (now - status.lastHeartbeat > OFFLINE_THRESHOLD) {
@@ -589,7 +589,7 @@ async function checkDeviceStatus(io) {
 
 // Start periodic status checking
 function startStatusMonitoring(io) {
-	setInterval(() => checkDeviceStatus(io), 10000); // Check every 10 seconds
+	setInterval(() => checkDeviceStatus(io), 2000); // Check every 2 seconds
 }
 
 module.exports = {

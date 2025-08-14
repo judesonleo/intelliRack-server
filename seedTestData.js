@@ -1,4 +1,10 @@
 // Usage: node seedTestData.js
+// This script creates test data with various stock levels:
+// - EMPTY: 0g (completely out of stock)
+// - VLOW: 10-80g (very low stock, urgent restock needed)
+// - LOW: 50-150g (low stock, restock recommended)
+// - OK: 200-400g (moderate stock)
+// - GOOD: 400g+ (well stocked)
 const mongoose = require("mongoose");
 const IngredientLog = require("./models/IngredientLog");
 const Device = require("./models/Device");
@@ -9,7 +15,16 @@ require("dotenv").config();
 const TEST_USER_EMAIL = "test@gmail.com";
 const TEST_USER_PASSWORD = "test";
 const TEST_DEVICE_RACKID = "rack_001";
-const INGREDIENTS = ["Flour", "Sugar", "Rice", "Coffee"];
+const INGREDIENTS = [
+	"Flour",
+	"Sugar",
+	"Rice",
+	"Coffee",
+	"Salt",
+	"Pepper",
+	"Tea",
+	"Cocoa",
+];
 const SLOTS = ["1", "2"];
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
 
@@ -60,22 +75,61 @@ async function seed() {
 			}
 			const ingredient = INGREDIENTS[ingredientIdx];
 
-			// Simulate anomaly every 11 days
-			let anomaly = false;
-			if (day % 11 === 0 && day !== 0) {
-				weight -= 600; // big drop
-				anomaly = true;
+			// Create some ingredients that are consistently low/empty for testing
+			if (ingredient === "Salt" && slotId === "1") {
+				// Salt in slot 1 will be consistently low
+				weight = Math.floor(Math.random() * 80) + 20; // 20-100g
+			} else if (ingredient === "Pepper" && slotId === "2") {
+				// Pepper in slot 2 will be consistently very low
+				weight = Math.floor(Math.random() * 50) + 10; // 10-60g
+			} else if (ingredient === "Tea") {
+				// Tea will sometimes be empty
+				if (day % 12 === 0) {
+					weight = 0;
+				} else {
+					weight = Math.floor(Math.random() * 150) + 50; // 50-200g
+				}
 			}
 
-			// Simulate normal usage
-			let usage = Math.floor(Math.random() * 30 + 10);
-			if (!anomaly) weight -= usage;
-			if (weight < 0) weight = 0;
+			// Simulate different stock scenarios
+			let stockScenario = day % 15; // Different scenarios every 15 days
 
-			// Simulate restock every 7 days
-			if (day % 7 === 0 && day !== 0) weight = 1000;
+			if (stockScenario === 0) {
+				// Empty stock scenario
+				weight = 0;
+			} else if (stockScenario === 5) {
+				// Low stock scenario (between 50-150g)
+				weight = Math.floor(Math.random() * 100) + 50;
+			} else if (stockScenario === 10) {
+				// Very low stock scenario (between 10-80g)
+				weight = Math.floor(Math.random() * 70) + 10;
+			} else {
+				// Normal usage pattern
+				let usage = Math.floor(Math.random() * 3) + 1; // 1-3g per day
+				weight -= usage;
 
-			const status = weight === 0 ? "EMPTY" : weight < 200 ? "LOW" : "GOOD";
+				// Ensure weight doesn't go below 0
+				if (weight < 0) weight = 0;
+
+				// Random restock chance (20% probability)
+				if (Math.random() < 0.2) {
+					weight = Math.floor(Math.random() * 400) + 600; // 600-1000g
+				}
+			}
+
+			// Determine status based on weight
+			let status;
+			if (weight === 0) {
+				status = "EMPTY";
+			} else if (weight < 100) {
+				status = "VLOW"; // Very low
+			} else if (weight < 200) {
+				status = "LOW";
+			} else if (weight < 400) {
+				status = "OK";
+			} else {
+				status = "GOOD";
+			}
 			try {
 				await IngredientLog.create({
 					user: user._id,

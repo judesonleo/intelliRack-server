@@ -289,12 +289,55 @@ io.on("connection", (socket) => {
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-	const mqttClient = app.get("mqttClient");
 	res.json({
-		status: "OK",
+		status: "healthy",
 		timestamp: new Date().toISOString(),
-		mqtt: mqttClient && mqttClient.connected ? "connected" : "disconnected",
+		uptime: process.uptime(),
+		version: "1.0.0",
 	});
+});
+
+// Network info endpoint for device discovery
+app.get("/api/network-info", (req, res) => {
+	// Get client IP address
+	const clientIP =
+		req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+
+	// Extract base IP (first 3 octets)
+	const baseIP = clientIP.split(".").slice(0, 3).join(".");
+
+	res.json({
+		clientIP,
+		baseIP,
+		timestamp: new Date().toISOString(),
+	});
+});
+
+// Broadcast discovery endpoint for device discovery
+app.post("/api/broadcast-discovery", async (req, res) => {
+	try {
+		const { action, timeout = 5000 } = req.body;
+
+		if (action !== "discover") {
+			return res.status(400).json({ error: "Invalid action" });
+		}
+
+		console.log("Broadcast discovery requested, timeout:", timeout);
+
+		// For now, return empty array since we don't have active device scanning
+		// In a real implementation, this could trigger network scanning or return cached devices
+		res.json({
+			devices: [],
+			message: "Broadcast discovery completed",
+			timestamp: new Date().toISOString(),
+		});
+	} catch (error) {
+		console.error("Broadcast discovery error:", error);
+		res.status(500).json({
+			error: "Broadcast discovery failed",
+			message: error.message,
+		});
+	}
 });
 
 // Test MQTT command endpoint

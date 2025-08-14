@@ -87,10 +87,10 @@ function setupMQTT(io) {
 
 			// Handle different message types
 			if (topic.includes("/heartbeat")) {
-				await handleDeviceHeartbeat(deviceId, payload, io);
+				handleDeviceHeartbeat(deviceId, payload, io);
 			} else if (topic.includes("/status")) {
 				// Device status update
-				await handleDeviceHeartbeat(deviceId, payload, io);
+				handleDeviceHeartbeat(deviceId, payload, io);
 			} else if (topic.includes("/response")) {
 				// Command response from device
 				console.log(`Command response from ${deviceId}:`, payload);
@@ -116,10 +116,10 @@ function setupMQTT(io) {
 				}
 			} else if (topic.includes("/weight") || topic.includes("/data")) {
 				// Weight/ingredient data
-				await handleMQTTMessage(payload, io);
+				handleMQTTMessage(payload, io);
 			} else {
 				// Default handling for other topics
-				await handleMQTTMessage(payload, io);
+				handleMQTTMessage(payload, io);
 			}
 		} catch (err) {
 			console.error("❌ MQTT Error:", err.message);
